@@ -1,0 +1,29 @@
+# Virtual environments
+.venv/
+venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Build / packaging
+*.egg-info/
+dist/
+build/
+
+# Environment / secrets
+.env
+.env.local
+
+# Scratch / throwaway files
+scratch/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# Test / tool caches
+.pytest_cache/
+.ruff_cache/

@@ -1,68 +1,72 @@
-# sentinel 🛡️
+# sentinel
 
-> An agentic pre-commit code guardian for Python projects.
-
-Sentinel runs before every commit and dispatches three specialized AI agents across your staged diff:
-
-- **Readability agent** — naming, complexity, magic numbers
-- **Dead code agent** — unused imports, unreachable branches, stale TODOs  
-- **Blast radius agent** — traces who calls your edited functions (one-hop call graph)
-
-## Install
+> AI code guardian for Python. Catches readability issues, dead code, and blast-radius risks before they hit `main`.
 
 ```bash
-pip install sentinel-cli  # coming soon to PyPI
+pip install -e . && export ANTHROPIC_API_KEY=sk-... && sentinel install
 ```
 
-Or from source:
+---
 
-```bash
-git clone https://github.com/yourname/sentinel
-cd sentinel
-pip install -e .
+## Demo
+
+Stage any Python file and run `sentinel check`:
+
+```
+────────────────────────── sentinel  scratch/demo.py ───────────────────────────
+
+✔  Readability
+
+✔  Dead Code
+
+✘  Blast Radius
+     ⚡ You edited helper()
+     Callers: process() , main()
+     → Verify these still behave correctly
+     ⚡ You edited process()
+     Callers: main()
+     → Verify these still behave correctly
+
+────────────────────────────────────────────────────────────────────────────────
+2 issues found across 1 file  fix above, or `git commit --no-verify` to bypass
 ```
 
-## Usage
+**What this is telling you:** `helper()` is called by both `process()` and `main()` — touch it carelessly and you break two code paths simultaneously. `process()` flows into `main()`, so a subtle signature change can silently corrupt downstream behavior. The blast radius agent surfaces this in milliseconds using a static call graph, no LLM required. When the API key is set, the readability and dead code agents add a second layer: Claude reviews the diff line-by-line for unclear names, magic numbers, unused imports, and unreachable branches — the kind of nits that survive code review and rot quietly.
 
-```bash
-# Run manually on staged changes
-sentinel check
+---
 
-# Install as a git pre-commit hook (auto-runs on every commit)
-sentinel install
+## How it works
 
-# Remove the hook
-sentinel uninstall
+- **Readability agent** — sends your staged diff to Claude and flags unclear variable names, magic numbers, missing docstrings, and deeply nested logic.
+- **Dead code agent** — asks Claude to identify unused imports, unreachable branches after `return`/`raise`, and variables that are assigned but never read within the visible diff.
+- **Blast radius agent** — builds a one-hop call graph from your repo using tree-sitter (no LLM) and lists every function that calls into the code you just edited.
 
-# Check a specific file (bypass git staging)
-sentinel check --file path/to/file.py
-```
+---
 
 ## Setup
 
 ```bash
-export ANTHROPIC_API_KEY=your_key_here
+# 1. Install
+git clone https://github.com/yourname/sentinel
+cd sentinel
+pip install -e .
+
+# 2. Add your Anthropic key (required for readability + dead code agents)
+export ANTHROPIC_API_KEY=sk-...
+
+# 3. Wire it up as a pre-commit hook
+sentinel install
 ```
 
-## Output example
+From here, `sentinel check --strict` runs automatically on every `git commit` and exits non-zero if issues are found. Use `git commit --no-verify` to bypass when you need to.
 
-```
-🛡️  sentinel — analyzing staged changes...
+```bash
+# Run manually at any time
+sentinel check
 
-📁  Changed: auth.py, payments.py
+# Check a specific file without staging it
+sentinel check --file path/to/file.py
 
-🔍 Readability
-  ⚠  auth.py:42  Variable `x` is unclear — consider `user_token`
-  ⚠  payments.py:18  Magic number 86400 — extract as SECONDS_IN_DAY
-
-🧹 Dead Code  
-  ✗  auth.py:12  Unused import: `hashlib`
-  ✗  payments.py:67  Unreachable branch after return on line 65
-
-💥 Blast Radius
-  ⚡ You edited `process_payment()` in payments.py
-     Callers found: checkout() [orders.py:34], retry_handler() [jobs.py:91]
-     → Verify these still behave correctly
-
-✅  No blocking issues. Commit when ready.
+# Remove the hook
+sentinel uninstall
 ```
