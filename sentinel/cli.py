@@ -1,9 +1,9 @@
 import typer
 from rich.console import Console
 from rich.rule import Rule
-from rich.text import Text
 from pathlib import Path
 
+from sentinel.core.config import load_config, SentinelConfig
 from sentinel.core.git import get_staged_diff, get_staged_files
 from sentinel.core.parser import build_call_graph, extract_edited_functions
 from sentinel.core.runner import run_agents
@@ -22,6 +22,8 @@ def check(
     strict: bool = typer.Option(False, "--strict", "-s", help="Exit with error code if any issues found."),
 ):
     """Analyze staged changes with three specialized AI agents."""
+    config = load_config()
+
     if file:
         if not file.exists():
             console.print(f"[red]File not found:[/red] {file}")
@@ -36,7 +38,14 @@ def check(
         console.print("[yellow]No staged changes found.[/yellow] Stage some files with `git add` first.")
         raise typer.Exit(0)
 
-    files_str = "  ".join(changed_files)
+    # Filter out ignored paths
+    if config.ignore.paths:
+        changed_files = [
+            f for f in changed_files
+            if not any(f.startswith(p) for p in config.ignore.paths)
+        ]
+
+    files_str = "  ".join(changed_files) if changed_files else "(all files ignored)"
     console.print()
     console.print(Rule(f"[bold cyan]sentinel[/bold cyan]  [dim]{files_str}[/dim]"))
     console.print()
@@ -44,12 +53,29 @@ def check(
     call_graph = build_call_graph(Path("."))
     edited_functions = extract_edited_functions(diff)
 
-    results = run_agents(diff=diff, call_graph=call_graph, edited_functions=edited_functions)
+    # Filter out ignored functions before blast radius analysis
+    if config.ignore.functions:
+        edited_functions = [f for f in edited_functions if f not in config.ignore.functions]
 
-    _render_results(results, changed_files)
+    enabled_agents = {
+        name for name, enabled in [
+            ("readability", config.agents.readability),
+            ("dead_code", config.agents.dead_code),
+            ("blast_radius", config.agents.blast_radius),
+        ]
+        if enabled
+    }
 
-    has_issues = any(results[k] for k in results)
-    if strict and has_issues:
+    results = run_agents(
+        diff=diff,
+        call_graph=call_graph,
+        edited_functions=edited_functions,
+        enabled_agents=enabled_agents,
+    )
+
+    should_block = _render_results(results, changed_files, config)
+
+    if should_block or (strict and any(results[k] for k in results)):
         raise typer.Exit(1)
 
 
@@ -71,7 +97,7 @@ def install():
 
     hook_path.write_text(hook_script)
     hook_path.chmod(0o755)
-    console.print("[green]checkmark[/green] sentinel installed as pre-commit hook.")
+    console.print("[green]✔[/green] sentinel installed as pre-commit hook.")
 
 
 @app.command()
@@ -80,39 +106,57 @@ def uninstall():
     hook_path = Path(".git/hooks/pre-commit")
     if hook_path.exists():
         hook_path.unlink()
-        console.print("[green]checkmark[/green] sentinel hook removed.")
+        console.print("[green]✔[/green] sentinel hook removed.")
     else:
         console.print("[yellow]No pre-commit hook found.[/yellow]")
 
 
-def _render_results(results: dict, changed_files: list[str]):
+def _render_results(results: dict, changed_files: list[str], config: SentinelConfig) -> bool:
+    """
+    Print per-section results. Returns True if any error-severity section
+    has findings (caller should exit 1).
+    """
     sections = [
-        ("readability", "Readability", "yellow"),
-        ("dead_code",   "Dead Code",   "magenta"),
-        ("blast_radius","Blast Radius","red"),
+        ("readability",  "Readability",  "yellow"),
+        ("dead_code",    "Dead Code",    "magenta"),
+        ("blast_radius", "Blast Radius", "red"),
     ]
 
-    total_issues = 0
+    issue_counts: dict[str, int] = {}
+    should_block: bool = False
 
     for key, label, color in sections:
-        items = results.get(key, [])
+        items: list[str] = results.get(key, [])
+        severity: str = getattr(config.severity, key, "warning")
+        severity_tag = "[red]error[/red]" if severity == "error" else "[yellow]warn[/yellow]"
+
         if not items:
             console.print(f"[green]✔[/green]  [bold]{label}[/bold]")
         else:
-            total_issues += len(items)
-            console.print(f"[{color}]✘[/{color}]  [bold {color}]{label}[/bold {color}]")
+            issue_counts[key] = len(items)
+            if severity == "error":
+                should_block = True
+            console.print(
+                f"[{color}]✘[/{color}]  [bold {color}]{label}[/bold {color}]"
+                f"  {severity_tag}"
+            )
             for item in items:
                 console.print(f"   {item}")
         console.print()
 
+    total_issues: int = sum(issue_counts.values())
     console.print(Rule())
     if total_issues == 0:
         console.print("[bold green]✔ All clear — nothing flagged. Good to commit.[/bold green]")
     else:
         n_files = len(changed_files)
         file_word = "file" if n_files == 1 else "files"
+        block_note = "  [red]commit blocked[/red]" if should_block else "  [dim]warnings only — commit allowed[/dim]"
         console.print(
-            f"[bold red]{total_issues} issue{'s' if total_issues != 1 else ''} found "
-            f"across {n_files} {file_word}[/bold red]  "
-            "[dim]fix above, or `git commit --no-verify` to bypass[/dim]"
+            f"[bold]{total_issues} issue{'s' if total_issues != 1 else ''} found "
+            f"across {n_files} {file_word}[/bold]{block_note}"
         )
+        if should_block:
+            console.print("[dim]Fix errors above, or `git commit --no-verify` to bypass.[/dim]")
+
+    return should_block

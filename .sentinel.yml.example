@@ -1,0 +1,28 @@
+# .sentinel.yml — sentinel configuration
+# Copy this file to .sentinel.yml and adjust for your project.
+# All keys are optional; omitted keys use the defaults shown here.
+
+agents:
+  readability: true   # flag unclear names, magic numbers, missing docstrings
+  dead_code: true     # flag unused imports, unreachable code, stale TODOs
+  blast_radius: true  # show which functions call your edited functions
+
+severity:
+  # "error"   → findings block the commit (exit code 1)
+  # "warning" → findings are printed but the commit is allowed through
+  readability: warning
+  dead_code: error
+  blast_radius: warning
+
+ignore:
+  # Paths listed here are excluded from the changed-files list and blast
+  # radius analysis. Use the same prefix format as git output (no leading /).
+  paths:
+    - migrations/
+    - tests/
+
+  # Functions listed here are excluded from blast radius reporting even
+  # when they appear in the staged diff.
+  functions:
+    - setup
+    - teardown
