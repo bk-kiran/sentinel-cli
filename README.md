@@ -13,22 +13,23 @@ pip install -e . && export ANTHROPIC_API_KEY=sk-... && sentinel install
 Stage any Python file and run `sentinel check`:
 
 ```
-────────────────────────── sentinel  scratch/demo.py ───────────────────────────
+────────────────────────── sentinel  examples/chain.py ─────────────────────────
 
 ✔  Readability
 
 ✔  Dead Code
 
 ✘  Blast Radius
-     ⚡ You edited helper()
-     Callers: process() , main()
-     → Verify these still behave correctly
-     ⚡ You edited process()
-     Callers: main()
-     → Verify these still behave correctly
+   ⚡ You edited helper()
+   depth 1 → process() [examples/chain.py:5]
+   depth 2 → main() [examples/chain.py:8]
+   → 2 functions affected across 1 file
+   ⚡ You edited process()
+   depth 1 → main() [examples/chain.py:8]
+   → 1 function affected across 1 file
 
 ────────────────────────────────────────────────────────────────────────────────
-2 issues found across 1 file  fix above, or `git commit --no-verify` to bypass
+2 issues found across 1 file  warnings only — commit allowed
 ```
 
 **What this is telling you:** `helper()` is called by both `process()` and `main()` — touch it carelessly and you break two code paths simultaneously. `process()` flows into `main()`, so a subtle signature change can silently corrupt downstream behavior. The blast radius agent surfaces this in milliseconds using a static call graph, no LLM required. When the API key is set, the readability and dead code agents add a second layer: Claude reviews the diff line-by-line for unclear names, magic numbers, unused imports, and unreachable branches — the kind of nits that survive code review and rot quietly.
@@ -39,7 +40,7 @@ Stage any Python file and run `sentinel check`:
 
 - **Readability agent** — sends your staged diff to Claude and flags unclear variable names, magic numbers, missing docstrings, and deeply nested logic.
 - **Dead code agent** — asks Claude to identify unused imports, unreachable branches after `return`/`raise`, and variables that are assigned but never read within the visible diff.
-- **Blast radius agent** — builds a one-hop call graph from your repo using tree-sitter (no LLM) and lists every function that calls into the code you just edited.
+- **Blast radius agent** — builds a transitive call graph from your repo using tree-sitter (no LLM) and walks up to 5 hops to show every function that calls into the code you just edited, with depth labels.
 
 ---
 

@@ -15,9 +15,6 @@ build/
 .env
 .env.local
 
-# Scratch / throwaway files
-scratch/
-
 # Logs
 *.log
 
