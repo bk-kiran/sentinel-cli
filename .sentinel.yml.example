@@ -10,6 +10,9 @@ agents:
 blast_radius:
   max_depth: 5  # hops to traverse up the call graph (1 = direct callers only)
 
+report:
+  base_branch: main  # branch that `sentinel report` diffs against
+
 severity:
   # "error"   → findings block the commit (exit code 1)
   # "warning" → findings are printed but the commit is allowed through

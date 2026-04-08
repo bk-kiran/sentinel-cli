@@ -34,11 +34,17 @@ class BlastRadiusConfig:
 
 
 @dataclass
+class ReportConfig:
+    base_branch: str = "main"
+
+
+@dataclass
 class SentinelConfig:
     agents: AgentsConfig = field(default_factory=AgentsConfig)
     severity: SeverityConfig = field(default_factory=SeverityConfig)
     ignore: IgnoreConfig = field(default_factory=IgnoreConfig)
     blast_radius: BlastRadiusConfig = field(default_factory=BlastRadiusConfig)
+    report: ReportConfig = field(default_factory=ReportConfig)
 
 
 def load_config(cwd: Path = Path(".")) -> SentinelConfig:
@@ -51,7 +57,7 @@ def load_config(cwd: Path = Path(".")) -> SentinelConfig:
     if not config_path.exists():
         return SentinelConfig()
 
-    raw = yaml.safe_load(config_path.read_text()) or {}
+    raw: dict = yaml.safe_load(config_path.read_text()) or {}
 
     agents_raw = raw.get("agents", {})
     severity_raw = raw.get("severity", {})
@@ -77,4 +83,9 @@ def load_config(cwd: Path = Path(".")) -> SentinelConfig:
         max_depth=blast_radius_raw.get("max_depth", 5),
     )
 
-    return SentinelConfig(agents=agents, severity=severity, ignore=ignore, blast_radius=blast_radius)
+    report_raw = raw.get("report", {})
+    report = ReportConfig(
+        base_branch=report_raw.get("base_branch", "main"),
+    )
+
+    return SentinelConfig(agents=agents, severity=severity, ignore=ignore, blast_radius=blast_radius, report=report)
