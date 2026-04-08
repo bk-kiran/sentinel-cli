@@ -226,8 +226,13 @@ def _render_results(results: dict, changed_files: list[str], config: SentinelCon
 
 
 def _strip_rich(text: str) -> str:
-    """Remove rich markup tags, leaving plain text suitable for markdown."""
-    return re.sub(r"\[/?[^\]]*\]", "", text)
+    """Remove rich markup tags, leaving plain text suitable for markdown.
+
+    Rich tags contain only word characters, spaces, and an optional leading
+    slash (e.g. [bold], [/bold], [bold red], [dim]).  File paths like
+    [src/foo.py:42] contain '/', '.' or ':' so they are intentionally kept.
+    """
+    return re.sub(r"\[/?[\w ]+\]", "", text)
 
 
 def _build_report(
