@@ -29,10 +29,16 @@ class IgnoreConfig:
 
 
 @dataclass
+class BlastRadiusConfig:
+    max_depth: int = 5   # maximum hops to traverse up the call graph
+
+
+@dataclass
 class SentinelConfig:
     agents: AgentsConfig = field(default_factory=AgentsConfig)
     severity: SeverityConfig = field(default_factory=SeverityConfig)
     ignore: IgnoreConfig = field(default_factory=IgnoreConfig)
+    blast_radius: BlastRadiusConfig = field(default_factory=BlastRadiusConfig)
 
 
 def load_config(cwd: Path = Path(".")) -> SentinelConfig:
@@ -66,4 +72,9 @@ def load_config(cwd: Path = Path(".")) -> SentinelConfig:
         functions=ignore_raw.get("functions", []),
     )
 
-    return SentinelConfig(agents=agents, severity=severity, ignore=ignore)
+    blast_radius_raw: dict = raw.get("blast_radius", {})
+    blast_radius = BlastRadiusConfig(
+        max_depth=blast_radius_raw.get("max_depth", 5),
+    )
+
+    return SentinelConfig(agents=agents, severity=severity, ignore=ignore, blast_radius=blast_radius)

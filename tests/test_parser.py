@@ -10,6 +10,7 @@ from sentinel.core.parser import (
     TREE_SITTER_AVAILABLE,
     build_call_graph,
     extract_edited_functions,
+    get_transitive_callers,
 )
 
 
@@ -226,3 +227,119 @@ def test_extract_context_lines_ignored():
     """Lines without a leading + are context — def on them must be ignored."""
     diff = " def context_func():\n     pass\n"
     assert extract_edited_functions(diff) == []
+
+
+# ---------------------------------------------------------------------------
+# get_transitive_callers
+# ---------------------------------------------------------------------------
+
+def _cg(*edges: tuple[str, str], file: str = "f.py") -> dict:
+    """
+    Build a minimal call_graph from (callee, caller) pairs.
+    call_graph[callee] = [{"caller": caller, "file": file, "line": 1}]
+    """
+    from collections import defaultdict
+    cg: dict = defaultdict(list)
+    for callee, caller in edges:
+        cg[callee].append({"caller": caller, "file": file, "line": 1})
+    return dict(cg)
+
+
+def test_transitive_direct_caller_is_depth_1():
+    """A function that directly calls the target appears at depth 1."""
+    cg = _cg(("target", "direct"))
+    result = get_transitive_callers("target", cg)
+    assert len(result) == 1
+    assert result[0]["caller"] == "direct"
+    assert result[0]["depth"] == 1
+
+
+def test_transitive_depth_2():
+    """A caller of a caller appears at depth 2."""
+    # chain: target ← direct ← indirect
+    cg = _cg(("target", "direct"), ("direct", "indirect"))
+    result = get_transitive_callers("target", cg)
+    depths = {r["caller"]: r["depth"] for r in result}
+    assert depths["direct"] == 1
+    assert depths["indirect"] == 2
+
+
+def test_transitive_multiple_at_same_depth():
+    """Two independent direct callers both appear at depth 1."""
+    cg = _cg(("target", "a"), ("target", "b"))
+    result = get_transitive_callers("target", cg)
+    callers = {r["caller"] for r in result}
+    assert callers == {"a", "b"}
+    assert all(r["depth"] == 1 for r in result)
+
+
+def test_transitive_no_callers_returns_empty():
+    """A function nobody calls → empty list."""
+    cg = _cg(("other", "caller"))
+    assert get_transitive_callers("lonely", cg) == []
+
+
+def test_transitive_function_not_in_graph():
+    """Function absent from call_graph entirely → empty list."""
+    assert get_transitive_callers("ghost", {}) == []
+
+
+def test_transitive_cycle_no_infinite_loop():
+    """A → B → A cycle terminates cleanly; each function appears once."""
+    # a calls target, b calls a, a calls b (cycle between a and b)
+    cg = _cg(("target", "a"), ("a", "b"), ("b", "a"))
+    result = get_transitive_callers("target", cg)
+    caller_names = [r["caller"] for r in result]
+    # must terminate and not contain duplicates
+    assert len(caller_names) == len(set(caller_names))
+    assert "a" in caller_names
+    assert "b" in caller_names
+
+
+def test_transitive_self_loop_safe():
+    """A function that calls itself (self-loop) does not appear in results."""
+    cg = _cg(("target", "caller"), ("caller", "caller"))
+    result = get_transitive_callers("target", cg)
+    caller_names = [r["caller"] for r in result]
+    assert caller_names.count("caller") == 1  # appears once, not twice
+
+
+def test_transitive_max_depth_cap():
+    """Callers beyond max_depth are not returned."""
+    # chain: target ← d1 ← d2 ← d3 ← d4 ← d5 ← d6
+    edges = [("target", "d1"), ("d1", "d2"), ("d2", "d3"),
+             ("d3", "d4"), ("d4", "d5"), ("d5", "d6")]
+    cg = _cg(*edges)
+    result = get_transitive_callers("target", cg, max_depth=5)
+    depths = {r["caller"]: r["depth"] for r in result}
+    assert "d5" in depths
+    assert depths["d5"] == 5
+    assert "d6" not in depths  # depth 6 — beyond cap
+
+
+def test_transitive_max_depth_1_direct_only():
+    """max_depth=1 returns only direct callers, nothing deeper."""
+    cg = _cg(("target", "direct"), ("direct", "indirect"))
+    result = get_transitive_callers("target", cg, max_depth=1)
+    callers = {r["caller"] for r in result}
+    assert "direct" in callers
+    assert "indirect" not in callers
+
+
+def test_transitive_result_includes_file_and_line():
+    """Each result entry carries the file and line from the call graph."""
+    cg: dict = {"target": [{"caller": "fn", "file": "src/mod.py", "line": 42}]}
+    result = get_transitive_callers("target", cg)
+    assert result[0]["file"] == "src/mod.py"
+    assert result[0]["line"] == 42
+
+
+def test_transitive_each_function_appears_once():
+    """BFS guarantees each unique caller appears at most once (min depth)."""
+    # diamond: target ← a, target ← b, a ← root, b ← root
+    cg = _cg(("target", "a"), ("target", "b"), ("a", "root"), ("b", "root"))
+    result = get_transitive_callers("target", cg)
+    caller_names = [r["caller"] for r in result]
+    assert caller_names.count("root") == 1
+    assert caller_names.count("a") == 1
+    assert caller_names.count("b") == 1

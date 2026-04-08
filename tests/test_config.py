@@ -143,7 +143,7 @@ def test_disabled_agent_not_in_runner(tmp_path):
         called.append("dead_code")
         return []
 
-    def fake_blast_radius(edited_functions, call_graph):
+    def fake_blast_radius(edited_functions, call_graph, max_depth=5):
         called.append("blast_radius")
         return []
 

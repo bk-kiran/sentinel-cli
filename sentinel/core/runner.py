@@ -20,6 +20,7 @@ class SentinelState(TypedDict):
     dead_code: list[str]
     blast_radius: list[str]
     enabled_agents: set
+    blast_radius_max_depth: int
 
 
 def _readability_node(state: SentinelState) -> SentinelState:
@@ -40,6 +41,7 @@ def _blast_radius_node(state: SentinelState) -> SentinelState:
     return {**state, "blast_radius": run_blast_radius_agent(
         edited_functions=state["edited_functions"],
         call_graph=state["call_graph"],
+        max_depth=state["blast_radius_max_depth"],
     )}
 
 
@@ -69,6 +71,7 @@ def run_agents(
     call_graph: dict,
     edited_functions: list[str],
     enabled_agents: set | None = None,
+    blast_radius_max_depth: int = 5,
 ) -> dict:
     """Run enabled agents and return their results."""
     initial_state: SentinelState = {
@@ -79,6 +82,7 @@ def run_agents(
         "dead_code": [],
         "blast_radius": [],
         "enabled_agents": enabled_agents if enabled_agents is not None else _ALL_AGENTS,
+        "blast_radius_max_depth": blast_radius_max_depth,
     }
     final_state = _graph.invoke(initial_state)
     return {

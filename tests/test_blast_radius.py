@@ -104,24 +104,29 @@ def test_multiple_callers_all_appear():
 # Cap at 5 callers
 # ---------------------------------------------------------------------------
 
-def test_callers_capped_at_five():
-    """More than 5 callers — only the first 5 appear in the output string."""
+def test_all_direct_callers_shown():
+    """All direct callers appear — transitive agent has no breadth cap."""
     callers = [make_caller(f"caller_{i}", line=i) for i in range(8)]
     cg = {"big": callers}
     result = run_blast_radius_agent(["big"], cg)
     assert len(result) == 1
-    # caller_5 / caller_6 / caller_7 must NOT appear
-    assert "caller_5" not in result[0]
-    assert "caller_6" not in result[0]
-    assert "caller_7" not in result[0]
+    for i in range(8):
+        assert f"caller_{i}" in result[0]
 
 
-def test_exactly_five_callers_all_shown():
-    callers = [make_caller(f"c{i}", line=i) for i in range(5)]
-    cg = {"fn": callers}
-    result = run_blast_radius_agent(["fn"], cg)
-    for i in range(5):
-        assert f"c{i}" in result[0]
+def test_max_depth_limits_transitive_chain():
+    """Callers beyond max_depth are excluded from output."""
+    # chain: target ← d1 ← d2 ← d3
+    cg = {
+        "target": [make_caller("d1", line=1)],
+        "d1":     [make_caller("d2", line=2)],
+        "d2":     [make_caller("d3", line=3)],
+    }
+    result = run_blast_radius_agent(["target"], cg, max_depth=2)
+    assert len(result) == 1
+    assert "d1" in result[0]
+    assert "d2" in result[0]
+    assert "d3" not in result[0]  # depth 3 — beyond cap
 
 
 # ---------------------------------------------------------------------------

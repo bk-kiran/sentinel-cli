@@ -71,6 +71,7 @@ def check(
         call_graph=call_graph,
         edited_functions=edited_functions,
         enabled_agents=enabled_agents,
+        blast_radius_max_depth=config.blast_radius.max_depth,
     )
 
     should_block = _render_results(results, changed_files, config)

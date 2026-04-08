@@ -4,7 +4,7 @@ Builds a one-hop call graph: for each function definition in the repo,
 records which other functions it calls.
 """
 from pathlib import Path
-from collections import defaultdict
+from collections import defaultdict, deque
 
 try:
     import tree_sitter_python as tspython
@@ -96,6 +96,40 @@ def _extract_calls(root, source: bytes, filepath: str, call_graph: dict):
             walk(child)
 
     walk(root)
+
+
+def get_transitive_callers(
+    fn: str,
+    call_graph: dict,
+    max_depth: int = 5,
+) -> list[dict]:
+    """
+    BFS traversal of the call graph returning all callers of *fn* up to
+    *max_depth* hops away.
+
+    Each result dict contains:
+        caller (str), file (str), line (int), depth (int)
+
+    where depth=1 means a direct caller, depth=2 means a caller of a caller,
+    etc.  Cycles (A→B→A) are handled via a visited set so each function
+    appears at most once in the output at the shallowest depth found.
+    """
+    results: list[dict] = []
+    visited: set[str] = {fn}
+    queue: deque[tuple[str, int]] = deque([(fn, 0)])
+
+    while queue:
+        current, depth = queue.popleft()
+        if depth >= max_depth:
+            continue
+        for entry in call_graph.get(current, []):
+            caller_name: str = entry["caller"]
+            if caller_name not in visited:
+                visited.add(caller_name)
+                results.append({**entry, "depth": depth + 1})
+                queue.append((caller_name, depth + 1))
+
+    return results
 
 
 def extract_edited_functions(diff: str) -> list[str]:
