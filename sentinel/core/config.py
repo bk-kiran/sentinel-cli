@@ -2,10 +2,19 @@
 Loads .sentinel.yml from the current working directory into a SentinelConfig
 dataclass. Missing keys fall back to sensible defaults.
 """
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
+
+def is_ci() -> bool:
+    """Return True when running inside a known CI environment."""
+    return any(
+        os.environ.get(v)
+        for v in ["CI", "GITHUB_ACTIONS", "CIRCLECI", "TRAVIS"]
+    )
 
 
 @dataclass

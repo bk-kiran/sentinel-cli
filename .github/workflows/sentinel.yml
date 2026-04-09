@@ -1,0 +1,30 @@
+name: sentinel
+
+on: [pull_request]
+
+jobs:
+  sentinel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install sentinel
+        run: pip install sentinel-cli
+
+      - name: Run sentinel
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: sentinel ci --base ${{ github.base_ref }}
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-report
+          path: sentinel-report.md

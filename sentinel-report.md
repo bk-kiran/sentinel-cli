@@ -1,56 +1,33 @@
 # Sentinel Report
 
-**Branch:** test-feature  
+**Branch:** ci-test  
 **Base:** main  
-**Generated:** 2026-04-08 14:37:23  
-**Files changed:** scratch/chain.py, sentinel/cli.py, sentinel/core/config.py, sentinel/core/git.py
+**Generated:** 2026-04-09 10:51:13  
+**Files changed:** scratch/demo.py
 
 ## Summary
 
 | Agent | Issues | Severity |
 |-------|--------|----------|
-| Readability | 7 | warning |
-| Dead Code | 4 | error |
-| Blast Radius | 6 | warning |
+| Readability | 3 | warning |
+| Dead Code | 2 | error |
+| Blast Radius | 1 | warning |
 
 ## Readability
 
-- ⚠  scratch/chain.py:3  Unclear variable name 'x' in function parameter
-- ⚠  scratch/chain.py:3  Unclear variable name 'y' in function parameter
-- ⚠  scratch/chain.py:3  Unclear variable name 'z' in function parameter
-- ⚠  scratch/chain.py:4  Unclear variable name 'tmp'
-- ⚠  scratch/chain.py:7  Unclear variable name 'x' in function parameter
-- ⚠  scratch/chain.py:13  Magic number 42
-- ⚠  sentinel/cli.py:86  Function 'report' has no docstring and is longer than 5 lines
+- ⚠  scratch/demo.py:4  Unclear variable name 'x' - use descriptive parameter name
+- ⚠  scratch/demo.py:5  Unclear variable name 'tmp' - use descriptive variable name
+- ⚠  scratch/demo.py:8  Magic number 99 should be a named constant
 
 ## Dead Code
 
-- ✗  scratch/chain.py:1  import os unused
-- ✗  scratch/chain.py:4  Variable 'z' assigned but never read
-- ✗  sentinel/cli.py:2  import sys unused
-- ✗  sentinel/cli.py:3  import datetime unused (only datetime is used)
+- ✗  scratch/demo.py:1  `import os` is unused
+- ✗  scratch/demo.py:2  `import hashlib` is unused
 
 ## Blast Radius
 
-- ⚡ You edited process()
-  depth 1 → main() [scratch/chain.py:14]
-  → 1 function affected across 1 file
-- ⚡ You edited _strip_rich()
-  depth 1 → _build_report() [sentinel/cli.py:288]
-  depth 2 → report() [sentinel/cli.py:136]
-  → 2 functions affected across 1 file
-- ⚡ You edited get_current_branch()
-  depth 1 → report() [sentinel/cli.py:135]
-  → 1 function affected across 1 file
-- ⚡ You edited helper()
-  depth 1 → process() [scratch/chain.py:11]
-  depth 2 → main() [scratch/chain.py:14]
-  → 2 functions affected across 1 file
-- ⚡ You edited _build_report()
-  depth 1 → report() [sentinel/cli.py:136]
-  → 1 function affected across 1 file
-- ⚡ You edited get_branch_diff()
-  depth 1 → report() [sentinel/cli.py:95]
+- ⚡ You edited foo()
+  depth 1 → bar() [scratch/demo.py:9]
   → 1 function affected across 1 file
 
 ---

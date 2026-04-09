@@ -1,3 +1,4 @@
+import json
 import re
 import sys
 from datetime import datetime
@@ -6,7 +7,7 @@ from rich.console import Console
 from rich.rule import Rule
 from pathlib import Path
 
-from sentinel.core.config import load_config, SentinelConfig
+from sentinel.core.config import load_config, SentinelConfig, is_ci
 from sentinel.core.git import get_staged_diff, get_staged_files, get_branch_diff, get_current_branch
 from sentinel.core.parser import build_call_graph, extract_edited_functions
 from sentinel.core.runner import run_agents
@@ -25,6 +26,12 @@ def check(
     strict: bool = typer.Option(False, "--strict", "-s", help="Exit with error code if any issues found."),
 ):
     """Analyze staged changes with three specialized AI agents."""
+    if is_ci():
+        # Delegate to ci command when running inside a CI environment.
+        # Pass explicit None so Typer OptionInfo defaults are not used.
+        ci(base=None, fmt="json", output=None)
+        return
+
     config = load_config()
 
     if file:
@@ -140,6 +147,139 @@ def report(
     else:
         Path(output).write_text(markdown)
         console.print(f"[green]✔[/green] Report written to [bold]{output}[/bold]")
+
+
+def _build_json_output(
+    results: dict,
+    changed_files: list[str],
+    branch: str,
+    base_branch: str,
+    config: SentinelConfig,
+) -> dict:
+    sections = [
+        ("readability", "Readability"),
+        ("dead_code", "Dead Code"),
+        ("blast_radius", "Blast Radius"),
+    ]
+    findings = {}
+    for key, label in sections:
+        items: list[str] = results.get(key, [])
+        severity = getattr(config.severity, key, "warning")
+        findings[key] = {
+            "label": label,
+            "severity": severity,
+            "issues": [_strip_rich(item) for item in items],
+            "count": len(items),
+        }
+    return {
+        "meta": {
+            "branch": branch,
+            "base_branch": base_branch,
+            "generated": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "files_changed": changed_files,
+        },
+        "summary": {
+            "total_issues": sum(f["count"] for f in findings.values()),
+            "errors": sum(f["count"] for f in findings.values() if f["severity"] == "error"),
+            "warnings": sum(f["count"] for f in findings.values() if f["severity"] == "warning"),
+            "passed": sum(f["count"] for f in findings.values() if f["severity"] == "error") == 0,
+        },
+        "findings": findings,
+    }
+
+
+@app.command()
+def ci(
+    base: str = typer.Option(None, "--base", "-b", help="Base branch to diff against."),
+    fmt: str = typer.Option("json", "--format", "-f", help="Output format: json or markdown."),
+    output: str = typer.Option(None, "--output", "-o", help="Write output to this file (default: sentinel-report.md for markdown, stdout for json)."),
+):
+    """Run sentinel in CI mode: full branch diff, structured output, strict exit codes."""
+    config = load_config()
+    base_branch = base or config.report.base_branch
+
+    diff, changed_files = get_branch_diff(base_branch)
+
+    if not diff.strip():
+        console.print(f"[yellow]No Python changes found between current branch and {base_branch}.[/yellow]")
+        raise typer.Exit(0)
+
+    if config.ignore.paths:
+        changed_files = [
+            f for f in changed_files
+            if not any(f.startswith(p) for p in config.ignore.paths)
+        ]
+
+    call_graph = build_call_graph(Path("."))
+    edited_functions = extract_edited_functions(diff)
+
+    if config.ignore.functions:
+        edited_functions = [f for f in edited_functions if f not in config.ignore.functions]
+
+    enabled_agents = {
+        name for name, enabled in [
+            ("readability", config.agents.readability),
+            ("dead_code", config.agents.dead_code),
+            ("blast_radius", config.agents.blast_radius),
+        ]
+        if enabled
+    }
+
+    results = run_agents(
+        diff=diff,
+        call_graph=call_graph,
+        edited_functions=edited_functions,
+        enabled_agents=enabled_agents,
+        blast_radius_max_depth=config.blast_radius.max_depth,
+    )
+
+    branch = get_current_branch()
+
+    # Always write sentinel-report.md as a side effect
+    markdown = _build_report(results, changed_files, branch, base_branch, config)
+    Path("sentinel-report.md").write_text(markdown)
+
+    # Count errors vs warnings for summary
+    error_items: list[str] = []
+    warning_items: list[str] = []
+    for key in ("readability", "dead_code", "blast_radius"):
+        items: list[str] = results.get(key, [])
+        if not items:
+            continue
+        severity = getattr(config.severity, key, "warning")
+        if severity == "error":
+            error_items.extend(items)
+        else:
+            warning_items.extend(items)
+    error_count: int = len(error_items)
+    warning_count: int = len(warning_items)
+
+    n_files = len(changed_files)
+    file_word = "file" if n_files == 1 else "files"
+
+    parts = []
+    if error_count:
+        parts.append(f"{error_count} error{'s' if error_count != 1 else ''}")
+    if warning_count:
+        parts.append(f"{warning_count} warning{'s' if warning_count != 1 else ''}")
+    summary_str = ", ".join(parts) if parts else "no issues"
+    print(f"sentinel: {summary_str} across {n_files} {file_word}")
+
+    if fmt == "json":
+        data = _build_json_output(results, changed_files, branch, base_branch, config)
+        json_str = json.dumps(data, indent=2)
+        if output:
+            Path(output).write_text(json_str)
+        else:
+            print(json_str)
+    else:
+        if output and output != "-":
+            Path(output).write_text(markdown)
+        elif output == "-":
+            print(markdown)
+
+    if error_count > 0:
+        raise typer.Exit(1)
 
 
 @app.command()
